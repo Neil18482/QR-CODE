@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Attendance System</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="https://rawgit.com/schmich/instascan-builds/master/instascan.min.js"></script>
+    
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+        .logo-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .logo-container img {
+            height: 80px; 
+            margin: 0 15px;
+        }
+        .custom-text {
+            text-align: center;
+            font-size: 20px;
+            margin-bottom: 20px;
+        }
+        .scanner-container {
+            text-align: center;
+            padding: 20px;
+        }
+        #preview {
+            width: 100%;
+            max-width: 600px;
+            height: 400px;
+            border: 4px solid #007bff;
+            border-radius: 10px;
+        }
+/* 🔄 Maintain button space while hiding visually */
+#button-container, #resetAttendance, #switch-camera, #reset_students {
+    transition: opacity 0.3s ease-in-out;
+}
+
+/* 🔄 Ensure smooth UI adjustments */
+#scanner-container {
+    transition: margin-top 0.3s ease-in-out;
+}
+        /* Instead of display: none, use visibility hidden */
+        .hidden {
+            visibility: hidden;
+            opacity: 0;
+            position: absolute;
+        }
+
+        video {
+            transform: scaleX(-1);
+        }
+        .video-normal {
+            transform: scaleX(1) !important;
+        }
+        .hidden-ui {
+            display: none !important;
+        }
+/* Hide alert by default */
+/* Attendance Alert */
+#attendance-alert {
+    display: none;
+    text-align: center;
+    font-size: 20px;
+    font-weight: bold;
+    padding: 10px;
+    border-radius: 10px;
+    border: 1px solid orange;
+    background-color: #fff7e6;
+    color: #ff9800;
+    width: 100%;
+    max-width: 500px; /* Same as scanner size */
+    box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.2);
+    margin: 10px auto; /* Centers the alert */
+}
+/* ✅ Success Alert - White with Green Border */
+.alert-success {
+    background-color: white;  
+    color: green;  
+    border-color: green;
+}
+
+/* ⚠️ Warning Alert - Soft Yellow */
+.alert-warning {
+    background-color: #fff7e6;  
+    color: #ff9800;
+    border-color: #ff9800;
+}
+
+/* ❌ Error Alert - Soft Red */
+.alert-error {
+    background-color: #ffe6e6;
+    color: red;
+    border-color: red;
+}
+
+/* 📌 Improve Toggle UI Button */
+#toggle-ui {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    font-size: 24px;
+    padding: 15px;
+    border-radius: 50%;
+    background: #007bff;
+    color: white;
+    border: none;
+    box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.2);
+    transition: all 0.3s ease-in-out;
+    cursor: pointer;
+}
+
+#toggle-ui:hover {
+    background: #0056b3;
+    transform: scale(1.1);
+}
+/* 🔒 Lock Screen Overlay */
+.lock-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.75); /* Semi-transparent black */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999; /* Always on top */
+}
+
+/* 🔑 Lock Container */
+.lock-container {
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    text-align: center;
+    box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.2);
+}
+
+/* 🔒 Blur Effect for Locked Content */
+.blurred {
+    filter: blur(8px);
+    pointer-events: none; /* Disable clicking */
+    user-select: none; /* Prevent text selection */
+}
+
+/* ✅ Enable Content After Unlocking */
+.unlocked {
+    filter: none;
+    pointer-events: auto;
+    user-select: auto;
+}
+
+/* ✅ Disable Buttons Initially */
+.disabled {
+    pointer-events: none;
+    opacity: 0.5;
+}
+
+
+    </style>
+</head>
+<body>
+        <audio id="beep-sound">
+            <source src="{{ url_for('static', filename='sounds/beep.mp3') }}" type="audio/mpeg">
+        </audio>
+        
+
+<!-- 🔒 Locked Screen Overlay -->
+<div id="lock-screen" class="lock-overlay">
+    <div class="lock-container">
+        <h4>🔒 Admin Access Required</h4>
+        <input type="password" id="admin-password" class="form-control mb-2" placeholder="Enter Password">
+        <button onclick="unlockSystem()" class="btn btn-dark">Unlock</button>
+        <p id="password-error" class="text-danger mt-2" style="display:none;">Invalid Password!</p>
+    </div>
+</div>
+
+<!-- ✅ Main Content (Blurred & Disabled Initially) -->
+<div id="main-content" class="blurred">
+    <div class="container mt-4">
+        <div class="d-flex justify-content-center mb-3">
+            <img src="{{ url_for('static', filename='Logo/CSD.png') }}" alt="Logo 1" width="120" class="mx-2">
+            <img src="{{ url_for('static', filename='Logo/EVSU.png') }}" alt="Logo 2" width="120" class="mx-2">
+            <img src="{{ url_for('static', filename='Logo/JPCS.png') }}" alt="Logo 3" width="120" class="mx-2">
+        </div>
+        <p class="custom-text"><b>JUNIOR PHILIPPINE COMPUTER SOCIETY CHAPTER</b></p>
+        <p class="custom-text"><b>EASTERN VISAYAS STATE UNIVERSITY - ORMOC CAMPUS COMPUTER STUDIES DEPARTMENT</b></p>
+
+        <h2 class="text-center text-primary">QR Code Attendance System</h2>
+
+        <!-- ✅ Buttons (Initially Disabled) -->
+        <div id="button-container" class="text-center mb-3">
+            <a href="/register" class="btn btn-success disabled">Register a Student</a>
+            <a href="/download_attendance" class="btn btn-primary disabled">Download Attendance</a>
+            <a href="/download_students" class="btn btn-info disabled">Download Registered Students</a>
+        </div>
+        <!-- ✅ Control Buttons (Initially Disabled) -->
+        <div class="text-center mt-3">
+            <button id="resetAttendance" class="btn btn-danger disabled">Reset Attendance</button>
+            <button id="switch-camera" class="btn btn-primary disabled">Switch Camera</button>
+            <button id="reset_students" class="btn btn-warning disabled">Reset All Registered Students</button>
+        </div>
+        <!-- ✅ Scanner -->
+        <div id="scanner-container" class="scanner-container mt-4">
+            <video id="preview"></video>
+            <p id="status" class="mt-3"></p>
+        </div>
+
+        <button id="toggle-ui" class="btn btn-dark disabled">
+            <span id="eye-icon">👁️</span>
+        </button>
+    </div>
+</div>
+<div id="attendance-alert"></div>
+    <script>
+        let scanner = new Instascan.Scanner({ video: document.getElementById('preview') });
+        let cameras = [];
+        let currentCameraIndex = 0;
+        let notificationTimeout; // Store timeout reference globally
+
+        let scannerUnlocked = false;
+        const ADMIN_PASSWORD = "admin123"; // Change this to your preferred password
+
+// ✅ Function to Unlock System
+function unlockSystem() {
+    let inputPassword = document.getElementById("admin-password").value;
+    let errorMsg = document.getElementById("password-error");
+
+    if (inputPassword === ADMIN_PASSWORD) {
+        // ✅ Hide lock screen & remove blur
+        document.getElementById("lock-screen").style.display = "none";
+        document.getElementById("main-content").classList.remove("blurred");
+        document.getElementById("main-content").classList.add("unlocked");
+
+        // ✅ Enable all buttons & links
+        document.querySelectorAll(".disabled").forEach(el => {
+            el.classList.remove("disabled");
+        });
+    } else {
+        errorMsg.style.display = "block";
+    }
+}
+
+document.getElementById("toggle-ui").addEventListener("click", function() {
+    let uiHidden = document.getElementById("button-container").style.display === "none";
+    let eyeIcon = document.getElementById("eye-icon");
+    let previewBox = document.getElementById("preview");
+
+    // ✅ Toggle Visibility of Buttons
+    ["button-container", "resetAttendance", "switch-camera", "reset_students"].forEach(id => {
+        let element = document.getElementById(id);
+        if (element) {
+            element.style.display = uiHidden ? "flex" : "none";
+        }
+    });
+
+    // ✅ Adjust Camera Box Position
+    previewBox.style.marginTop = uiHidden ? "-80px" : "0px";
+
+    // ✅ Change Eye Icon
+    eyeIcon.innerHTML = uiHidden ? "🙈" : "👁️";
+});
+
+function showNotification(message, alertType) {
+    let alertBox = $("#attendance-alert");
+
+    // ✅ Reset any existing timer to prevent overlap
+    clearTimeout(notificationTimeout);
+
+    // ✅ Ensure previous styles are removed before adding a new one
+    alertBox.removeClass("alert-success alert-warning alert-error").addClass(alertType);
+    alertBox.html(message.replace(/\n/g, "<br>")); // Convert new lines to HTML `<br>`
+
+    alertBox.fadeIn();
+
+    // ✅ Play beep sound **only if attendance is marked**
+    if (alertType === "alert-success") {
+        let beepSound = document.getElementById("beep-sound");
+        if (beepSound) {
+            beepSound.play().catch(error => console.warn("⚠️ Beep sound error:", error));
+        }
+    }
+
+    // ✅ Hide notification after 5 seconds and store timeout reference
+    notificationTimeout = setTimeout(() => {
+        alertBox.fadeOut();
+    }, 5000);
+}
+
+
+// ✅ Scanner Listener
+scanner.addListener('scan', function(content) {
+    console.log("📷 Scanned QR Code:", content);
+
+    fetch('/decrypt_qr', {
+        method: 'POST',
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ qr_data: content })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // ✅ Send student ID to mark attendance
+            fetch('/mark_attendance', {
+                method: 'POST',
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ student_id: data.student_id })
+            })
+            .then(response => response.json().then(json => ({ status: response.status, body: json })))
+            .then(attendanceData => {
+                if (attendanceData.status === 200) {
+                    showNotification(attendanceData.body.message, "alert-success");
+                } else if (attendanceData.status === 400) {
+                    showNotification(attendanceData.body.message, "alert-warning");  // Show cooldown message
+                } else {
+                    showNotification(attendanceData.body.error, "alert-error");
+                }
+            })
+            .catch(error => {
+                showNotification("Attendance error!", "alert-error");
+                console.error("❌ Fetch Error (mark_attendance):", error);
+            });
+        } else {
+            showNotification("Invalid QR Code!", "alert-error");
+        }
+    })
+    .catch(error => {
+        showNotification(`Error: ${error}`, "alert-error");
+        console.error("❌ Fetch Error:", error);
+    });
+});
+
+        function startCamera(index) {
+            scanner.stop().then(() => {
+                scanner.start(cameras[index]);
+
+                let videoElement = document.getElementById("preview");
+                if (cameras[index].name.toLowerCase().includes("front")) {
+                    videoElement.classList.add("video-normal");
+                } else {
+                    videoElement.classList.remove("video-normal");
+                }
+            });
+        }
+
+        Instascan.Camera.getCameras().then(function(availableCameras) {
+            if (availableCameras.length > 0) {
+                cameras = availableCameras;
+                startCamera(currentCameraIndex);
+            } else {
+                alert('No camera found');
+            }
+        }).catch(function(e) {
+            console.error("Camera Error:", e);
+        });
+
+        document.getElementById("switch-camera").addEventListener("click", function() {
+            if (cameras.length > 1) {
+                currentCameraIndex = (currentCameraIndex + 1) % cameras.length;
+                startCamera(currentCameraIndex);
+            } else {
+                alert("No multiple cameras found!");
+            }
+        });
+
+// ✅ Toggle UI and Adjust Layout Automatically
+document.getElementById('toggle-ui').addEventListener('click', function() {
+            let buttons = document.querySelectorAll('.button-container button:not(#toggle-ui)');
+            let isHidden = buttons[0].classList.contains('hidden');
+            
+            buttons.forEach(button => {
+                if (isHidden) {
+                    button.classList.remove('hidden');
+                } else {
+                    button.classList.add('hidden');
+                }
+            });
+            
+            this.textContent = isHidden ? 'Hide UI' : 'Show UI';
+        });
+
+
+
+document.getElementById("resetAttendance").addEventListener("click", function () {
+    if (confirm("Are you sure you want to reset all attendance records? This cannot be undone!")) {
+        fetch("/reset_attendance", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ confirm: "yes" })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.alert === "success") {
+                showNotification(data.message, "alert-success"); // Show success notification
+            } else {
+                showNotification(data.error, "alert-error"); // Show error notification
+            }
+        })
+        .catch(error => {
+            console.error("Error:", error);
+            showNotification("An error occurred while resetting attendance.", "alert-error");
+        });
+    }
+});
+
+
+
+
+    </script>
+</body>
+</html>

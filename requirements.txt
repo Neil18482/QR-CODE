@@ -1,0 +1,5 @@
+flask
+mysql-connector-python
+qrcode[pil]
+opencv-python
+numpy
